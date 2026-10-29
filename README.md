@@ -1,82 +1,122 @@
 # paddock
 
-**Run Claude Code in Docker Sandboxes with your own `~/.claude` config — read-only, with project hooks blocked.**
+**Run Claude Code in Docker Sandboxes with your own `~/.claude` setup — read-only, with untrusted project hooks blocked.**
 
-Docker Sandboxes (`sbx`) gives Claude Code an isolated microVM where it can run
-with `--dangerously-skip-permissions` safely. But a fresh sandbox starts with
-none of your setup: no `CLAUDE.md`, no custom agents or slash commands, no
-plugins, no git identity, and `gh` isn't logged in. paddock is a small CLI on
-top of `sbx` that fixes that in one command, without letting the sandbox touch
-your host config.
+[Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) (`sbx`) runs Claude
+Code in an isolated microVM, so it can work without permission prompts. But
+every new sandbox starts bare: no `CLAUDE.md`, no custom agents or slash
+commands, no plugins, no git identity, and `gh` isn't logged in. paddock is a
+small CLI on top of `sbx` that brings your setup in with one command, and
+never lets the sandbox change it.
 
 ```sh
+paddock init           # once: config, checks, and the fixes for anything missing
 cd ~/code/my-project
-paddock
+paddock                # Claude Code in this project's sandbox, with your setup
 ```
 
-## Why you might want this
+Before starting anything, `paddock --dry-run` shows exactly what the sandbox
+will get:
 
-You've installed Docker Sandboxes and hit one of these:
+```
+paddock would create a new sandbox for my-project.
 
-- **Claude Code in the sandbox ignores my `~/.claude/CLAUDE.md`, agents and commands.**
-  `sbx` doesn't import user-level Claude config. paddock mounts it read-only.
-- **I want my settings in the sandbox, but I don't want the sandbox to be able to change them.**
-  Host config is mounted read-only; the sandbox gets its own `settings.json`
-  built from the portable parts of yours (model, env, plugins, marketplaces,
-  allowed permissions).
-- **`gh` fails inside the sandbox with `Failed to log in to github.com using token (GH_TOKEN)`.**
-  `paddock doctor` spots the missing token and prints the fix.
-- **`git commit` in the sandbox fails with `Author identity unknown`.**
-  paddock copies your host git name and email into new sandboxes.
-- **I don't want to run a cloned repo's `.claude/settings.json` hooks.**
-  A repo's hooks are arbitrary shell commands. paddock makes the hooks you
-  choose the only hooks that can run; project and plugin hooks are blocked.
-- **My host hooks call scripts that don't exist in the sandbox.**
-  Only hooks you allow are installed, so notification and audit hooks that
-  need your Mac stay on your Mac.
-- **I have two projects called `api` and they ended up in the same sandbox.**
-  paddock names each sandbox after the folder plus a short hash of its full path.
-- **I exited the sandbox and want my conversation back.**
-  `paddock -- --continue`.
+  Sandbox   claude-my-project-3f9a1c
+  Project   ~/code/my-project  (Claude can edit)
+  Config    ~/.claude: CLAUDE.md, agents, commands, settings.json  (read-only)
+
+  Hooks     2 of your 19 host hooks will run. Project hooks never run.
+            ✓ SessionStart      ~/.claude/hooks/session-start.sh
+            ✓ UserPromptSubmit  echo '{"hookSpecificOutput":{"hookEventName":"Use…
+            ✗ 17 blocked (-v to list them)
+
+  Plugins   code-review, gopls-lsp, my-team-tools
+
+Nothing was started. Run paddock without --dry-run to start it.
+```
+
+## Problems paddock solves
+
+### Claude Code in Docker Sandboxes ignores my `CLAUDE.md`, agents and slash commands
+
+`sbx` doesn't import user-level Claude Code config from `~/.claude`. paddock
+mounts the parts you choose read-only and links them into the sandbox's
+`~/.claude`, so your instructions, agents and commands work as they do on
+your machine.
+
+### I want my settings in the sandbox without the sandbox being able to change them
+
+Everything from `~/.claude` is mounted read-only; an attempt to write there
+fails with `Read-only file system`. The sandbox gets its own `settings.json`,
+built from the portable parts of yours: model, effort level, `env`, enabled
+plugins, plugin marketplaces and `permissions.allow`.
+
+### I don't want a cloned repo's `.claude/settings.json` hooks to run
+
+A repo's hooks are arbitrary shell commands that run when Claude starts,
+stops, or uses a tool. paddock installs the host hooks you allow as Claude
+Code managed settings with `allowManagedHooksOnly: true`, so project and
+plugin hooks are blocked in every paddock sandbox.
+
+### My host hooks call scripts that only exist on my machine
+
+Notification sounds, audit logs and status scripts usually need your host.
+Only the hooks you allow are installed; `paddock init` finds the ones that
+will work in a sandbox and asks before turning them on.
+
+### `gh` fails in the sandbox: `Failed to log in to github.com using token (GH_TOKEN)`
+
+The sandbox has no GitHub token. Save one for every sandbox:
+
+```sh
+sbx secret set github --command 'gh auth token'
+```
+
+`paddock doctor` checks for this. The same token lets the sandbox install
+plugins from private GitHub marketplaces.
+
+### `git commit` in the sandbox fails: `Author identity unknown`
+
+paddock copies your host `user.name` and `user.email` into each new sandbox.
+
+### Two projects with the same folder name share one sandbox
+
+paddock names each sandbox after the folder plus a short hash of its full
+path, so `~/work/api` and `~/oss/api` get separate sandboxes.
+
+### I exited the sandbox and want my conversation back
+
+Sandboxes, and the conversations in them, persist until you remove them:
+
+```sh
+paddock -- --continue   # resume the last conversation
+paddock -- --resume     # pick one
+```
 
 ## Install
 
-Requires [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) (`sbx`).
+You need [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) (`sbx`)
+installed and signed in.
 
-**Release binary** (macOS and Linux, amd64 and arm64):
+**Script** (macOS and Linux, amd64 and arm64; installs to `~/.local/bin`, or
+`$PADDOCK_INSTALL_DIR`):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/stiyyagura0901/paddock/main/install.sh | sh
 ```
 
-This installs `paddock` to `~/.local/bin`. Set `PADDOCK_INSTALL_DIR` to change
-that. You can also download an archive from
-[Releases](https://github.com/stiyyagura0901/paddock/releases) yourself.
+**Release archive:** download from
+[Releases](https://github.com/stiyyagura0901/paddock/releases) and put
+`paddock` on your `PATH`.
 
-**With Go** (1.24+):
+**Go** (1.24+):
 
 ```sh
 go install github.com/stiyyagura0901/paddock/cmd/paddock@latest
 ```
 
-**From source:**
-
-```sh
-git clone https://github.com/stiyyagura0901/paddock && cd paddock
-go build -o paddock ./cmd/paddock
-```
-
-## Quick start
-
-```sh
-paddock init      # writes a config, offers your portable hooks, checks your setup
-cd ~/code/my-project
-paddock --dry-run # optional: see exactly what will be shared and run
-paddock           # start Claude Code in this project's sandbox
-```
-
-`paddock init` ends by running `paddock doctor`, which tells you the exact
-command for anything missing, such as saving your GitHub token:
+Then run `paddock init`. It writes `~/.config/paddock/config.yaml`, offers your
+sandbox-ready hooks, installs the sandbox kit, and runs `paddock doctor`:
 
 ```
 ✓ sbx           sbx version v0.49.2
@@ -90,34 +130,25 @@ command for anything missing, such as saving your GitHub token:
 ✓ skills        host skills imported
 ```
 
+Every warning comes with the command that fixes it.
+
 ## Commands
 
 | Command | What it does |
 | --- | --- |
-| `paddock [DIR] [-- ARGS]` | Start or reattach to DIR's sandbox (default `.`). Arguments after `--` go to Claude, e.g. `paddock -- --continue` or `paddock -- --resume`. |
+| `paddock [DIR] [-- ARGS]` | Start or reattach to the sandbox for DIR (default: current folder). Arguments after `--` go to Claude Code. |
 | `paddock --dry-run [-v] [DIR]` | Show what would be shared and which hooks would run, without starting anything. `-v` lists blocked hooks and the `sbx` command. |
-| `paddock init` | First-run setup: config, kit, and `doctor`. Never overwrites an existing config. |
+| `paddock init` | First-run setup. Never overwrites an existing config. |
 | `paddock doctor` | Check `sbx`, config, git identity, SSH agent, Claude login, GitHub token, skills, and out-of-date sandboxes. |
-| `paddock sync` | Re-import `~/.claude/skills` into the sandbox skill store after you change them. |
-| `paddock ls` / `stop` / `rm` / `shell` | List, stop, remove, or open a shell in a project's sandbox. `rm` deletes its conversations. |
+| `paddock sync` | Re-import `~/.claude/skills` after you change them. |
+| `paddock ls`, `stop`, `rm`, `shell` | List sandboxes, or stop, remove, or open a shell in a project's sandbox. `rm` deletes its conversations. |
 
-## What gets shared
-
-| From your host | In the sandbox |
-| --- | --- |
-| The project folder | Read-write, at the same path |
-| `CLAUDE.md`, `agents/`, `commands/` (configurable) | Read-only, linked into the sandbox's `~/.claude` |
-| `settings.json` | Read-only; model, effort level, env, plugins, marketplaces and `permissions.allow` are copied into the sandbox's own settings |
-| Hooks you allow | Installed as managed hooks; everything else is blocked |
-| Skills | Via `sbx skills import` (`paddock sync`) |
-| git name and email, SSH agent | Copied / forwarded |
-
-Your host `~/.claude` is never written to.
+paddock refuses to mount `/` or your home folder; run it in a project folder.
 
 ## Configuration
 
 `~/.config/paddock/config.yaml` (or `$XDG_CONFIG_HOME/paddock/config.yaml`, or
-`$PADDOCK_CONFIG`):
+the path in `$PADDOCK_CONFIG`):
 
 ```yaml
 # Entries of ~/.claude mounted read-only and linked into the sandbox.
@@ -125,13 +156,14 @@ link:
   - CLAUDE.md
   - agents
   - commands
+  - hooks          # needed if an allowed hook runs a script from ~/.claude/hooks
 
 hooks:
   # Host hooks run in the sandbox only if their command starts with one of
   # these prefixes. Project and plugin hooks never run.
   allow:
     - "echo "
-    - "~/.claude/hooks/"   # add "hooks" to link: too, so the scripts exist
+    - "~/.claude/hooks/session-start.sh"
 
 plugins:
   # Host plugins to turn off inside the sandbox, as name@marketplace.
@@ -140,53 +172,60 @@ plugins:
 
 Unknown keys are an error, so a typo can't silently change what runs.
 
-Config is applied when a sandbox is created. After changing it, `paddock`
-warns about sandboxes created with older settings; remove one with
-`paddock rm` and run `paddock` again to recreate it.
+Settings apply when a sandbox is created. After you change them, `paddock` and
+`paddock doctor` point out sandboxes created with older settings; recreate one
+with `paddock rm` then `paddock`.
 
-## Troubleshooting
+## What's shared, and what isn't
 
-**`gh auth status` fails in the sandbox.** Save a token for all sandboxes:
-`sbx secret set github --command 'gh auth token'`. New and restarted
-sandboxes pick it up.
+| From your machine | In the sandbox |
+| --- | --- |
+| The project folder | Read-write, at the same path |
+| `~/.claude` entries in `link:` and `settings.json` | Read-only |
+| Model, effort, `env`, plugins, marketplaces, `permissions.allow` | Copied into the sandbox's own settings |
+| Hooks matching `hooks.allow` | Installed as managed hooks; all others blocked |
+| Skills | Copied by `sbx skills import` (`paddock sync`) |
+| git name and email; SSH agent | Copied; forwarded |
 
-**A plugin from a private GitHub marketplace won't install.** Same fix: the
-sandbox needs the GitHub token to clone the marketplace.
+Your host `~/.claude` is never written to. Things to know:
 
-**My hook doesn't run in the sandbox.** Run `paddock --dry-run -v` to see
-whether it's allowed. If it calls a script, the script's folder must be in
-`link:` and the hook must refer to it by a path under `~/.claude`.
-
-**I changed my config and nothing happened.** Existing sandboxes keep the
-settings they were created with. `paddock doctor` lists out-of-date ones.
-
-**My skills are missing.** Run `paddock sync`.
-
-**`git push` fails in the sandbox.** Check `ssh-add -l` on the host lists a
-key; `sbx` forwards your SSH agent.
+- Claude can still edit, commit and push the project folder. That's the point
+  of the sandbox; use git to review what it did.
+- The `env` block of your `settings.json` is copied in. Don't keep secrets
+  there that you wouldn't give the sandbox.
+- Network access is governed by `sbx` policies (`sbx policy`), not paddock.
 
 ## How it works
 
-paddock is a thin wrapper around `sbx run`. For a new sandbox it:
+paddock is a thin wrapper around `sbx run`. For a new sandbox it mounts the
+project and your chosen config, and applies a small
+[kit](https://docs.docker.com/ai/sandboxes/) embedded in the binary. When the
+sandbox starts, the kit:
 
-1. Mounts the project read-write and your chosen `~/.claude` entries read-only.
-2. Applies a small [kit](https://docs.docker.com/ai/sandboxes/) embedded in the
-   binary. At startup the kit links your config into the sandbox's
-   `~/.claude`, builds the sandbox's `settings.json` from the portable parts of
-   yours, and writes `/etc/claude-code/managed-settings.json` with your allowed
-   hooks and `allowManagedHooksOnly: true`. Managed settings outrank project
-   and plugin settings, which is what blocks every other hook.
-3. Remembers a fingerprint of those settings, so it can tell you later when a
-   sandbox is out of date.
+1. links your config into the sandbox's `~/.claude`;
+2. builds the sandbox's `settings.json` from the portable parts of yours;
+3. writes `/etc/claude-code/managed-settings.json` with your allowed hooks and
+   `allowManagedHooksOnly: true`. Managed settings outrank project and plugin
+   settings, which is what blocks every other hook.
 
-Reattaching just runs `sbx run --name <sandbox>`.
+paddock records a fingerprint of those settings per sandbox so it can tell you
+later when one is out of date. Reattaching just runs `sbx run --name`.
+
+## Uninstall
+
+```sh
+paddock ls                      # remove sandboxes you no longer need with sbx rm
+rm "$(command -v paddock)"
+rm -rf ~/.config/paddock        # your config
+rm -rf ~/Library/Caches/paddock ~/.cache/paddock   # kit and sandbox records
+```
 
 ## Status
 
-Early. Tested on macOS with `sbx` v0.49. Linux builds are published but
-untested so far; reports welcome. Claude Code is the only agent for now.
+Early, and tested on macOS with `sbx` v0.49. Linux builds are published but
+not yet tested; reports are welcome. Claude Code is the only agent for now.
 
-paddock is an independent project and is not affiliated with Docker or Anthropic.
+paddock is an independent project, not affiliated with Docker or Anthropic.
 
 ## License
 
