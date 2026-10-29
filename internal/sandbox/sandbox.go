@@ -23,16 +23,19 @@ func ResolveDir(dir, home string) (string, error) {
 	}
 	abs, err = filepath.EvalSymlinks(abs)
 	if err != nil {
-		return "", fmt.Errorf("no such directory: %s", dir)
+		return "", fmt.Errorf("there's no folder at %s", dir)
 	}
 	if fi, err := os.Stat(abs); err != nil || !fi.IsDir() {
-		return "", fmt.Errorf("not a directory: %s", dir)
+		return "", fmt.Errorf("%s is a file; give paddock a project folder", dir)
 	}
 	if h, err := filepath.EvalSymlinks(home); err == nil {
 		home = h
 	}
-	if abs == "/" || abs == filepath.Clean(home) {
-		return "", errors.New("refusing to mount " + abs + "; pick a project directory")
+	switch abs {
+	case "/":
+		return "", errors.New("won't share your whole disk with a sandbox. Run paddock inside a project folder")
+	case filepath.Clean(home):
+		return "", errors.New("won't share your whole home folder with a sandbox. Run paddock inside a project folder, for example: cd ~/code/my-project && paddock")
 	}
 	return abs, nil
 }

@@ -30,9 +30,14 @@ type Config struct {
 	} `yaml:"plugins"`
 }
 
-// Starter returns the config paddock init writes, allowing the given hook
-// prefixes. With no prefixes it parses to Default().
-func Starter(allow []string) string {
+// Starter returns the config paddock init writes: the default links plus
+// extraLinks, and the given hook prefixes. With neither it parses to
+// Default().
+func Starter(extraLinks, allow []string) string {
+	var links strings.Builder
+	for _, l := range append(Default().Link, extraLinks...) {
+		fmt.Fprintf(&links, "  - %s\n", strconv.Quote(l))
+	}
 	hooks := "  allow: []\n  #  - \"echo \"\n  #  - \"~/.claude/hooks/\"\n"
 	if len(allow) > 0 {
 		var b strings.Builder
@@ -48,10 +53,7 @@ func Starter(allow []string) string {
 # Entries of ~/.claude mounted read-only and linked into the sandbox.
 # settings.json is always mounted; only its portable parts are used.
 link:
-  - CLAUDE.md
-  - agents
-  - commands
-
+` + links.String() + `
 hooks:
   # Host hooks run in the sandbox only if their command starts with one
   # of these prefixes. Project hooks never run.
@@ -116,7 +118,7 @@ func parse(b []byte, path string) (Config, error) {
 
 // WriteStarter writes the starter config to path unless a file is already
 // there. It reports whether it wrote one.
-func WriteStarter(path string, allow []string) (bool, error) {
+func WriteStarter(path string, extraLinks, allow []string) (bool, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return false, err
 	}
@@ -127,7 +129,7 @@ func WriteStarter(path string, allow []string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if _, err := f.WriteString(Starter(allow)); err != nil {
+	if _, err := f.WriteString(Starter(extraLinks, allow)); err != nil {
 		f.Close()
 		return false, err
 	}

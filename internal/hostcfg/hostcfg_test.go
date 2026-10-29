@@ -1,23 +1,33 @@
 package hostcfg
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestSuggest(t *testing.T) {
+	home := t.TempDir()
+	for _, d := range []string{"knowledge", "hooks"} {
+		os.MkdirAll(filepath.Join(home, ".claude", d), 0o755)
+	}
 	links := []string{"CLAUDE.md", "knowledge"}
 	for _, tc := range []struct {
-		cmd, want string
-		ok        bool
+		cmd, prefix, needLink string
+		ok                    bool
 	}{
-		{`echo '{"a":1}'`, "echo ", true},
-		{"~/.claude/knowledge/start.sh", "~/.claude/knowledge/start.sh", true},
-		{"bash /home/u/.claude/knowledge/x.sh arg", "bash /home/u/.claude/knowledge/x.sh", true},
-		{"bash /home/u/.claude/hooks/notify.sh", "", false}, // hooks/ is not linked
-		{"/home/u/bin/usage.sh", "", false},
-		{`if [ -z "$HOME" ]; then :; fi`, "", false},
+		{`echo '{"a":1}'`, "echo ", "", true},
+		{"~/.claude/knowledge/start.sh", "~/.claude/knowledge/start.sh", "", true},
+		{"bash " + home + "/.claude/knowledge/x.sh arg", "bash " + home + "/.claude/knowledge/x.sh", "", true},
+		// Works once hooks/ is linked too.
+		{"bash " + home + "/.claude/hooks/notify.sh", "bash " + home + "/.claude/hooks/notify.sh", "hooks", true},
+		{"~/.claude/missing/x.sh", "", "", false},
+		{"/opt/bin/usage.sh", "", "", false},
+		{`if [ -z "$HOME" ]; then :; fi`, "", "", false},
 	} {
-		got, ok := Suggest(tc.cmd, links, "/home/u")
-		if got != tc.want || ok != tc.ok {
-			t.Errorf("Suggest(%q) = %q, %v; want %q, %v", tc.cmd, got, ok, tc.want, tc.ok)
+		prefix, needLink, ok := Suggest(tc.cmd, links, home)
+		if prefix != tc.prefix || needLink != tc.needLink || ok != tc.ok {
+			t.Errorf("Suggest(%q) = %q, %q, %v; want %q, %q, %v", tc.cmd, prefix, needLink, ok, tc.prefix, tc.needLink, tc.ok)
 		}
 	}
 }

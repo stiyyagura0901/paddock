@@ -7,10 +7,10 @@ Code in an isolated microVM, so it can work without permission prompts. But
 every new sandbox starts bare: no `CLAUDE.md`, no custom agents or slash
 commands, no plugins, no git identity, and `gh` isn't logged in. paddock is a
 small CLI on top of `sbx` that brings your setup in with one command, and
-never lets the sandbox change it.
+never lets the sandbox change it. The first time you run it, it walks you
+through a one-time setup.
 
 ```sh
-paddock init           # once: config, checks, and the fixes for anything missing
 cd ~/code/my-project
 paddock                # Claude Code in this project's sandbox, with your setup
 ```
@@ -66,8 +66,10 @@ plugin hooks are blocked in every paddock sandbox.
 ### My host hooks call scripts that only exist on my machine
 
 Notification sounds, audit logs and status scripts usually need your host.
-Only the hooks you allow are installed; `paddock init` finds the ones that
-will work in a sandbox and asks before turning them on.
+Only the hooks you allow are installed. On first run, paddock finds the
+hooks that could run in a sandbox and asks about each one. Simple `echo`
+hooks default to yes; scripts default to no, because they'll run on Linux
+inside the sandbox.
 
 ### `gh` fails in the sandbox: `Failed to log in to github.com using token (GH_TOKEN)`
 
@@ -120,8 +122,10 @@ curl -fsSL https://raw.githubusercontent.com/stiyyagura0901/paddock/main/install
 go install github.com/stiyyagura0901/paddock/cmd/paddock@latest
 ```
 
-Then run `paddock init`. It writes `~/.config/paddock/config.yaml`, offers your
-sandbox-ready hooks, installs the sandbox kit, and runs `paddock doctor`:
+Then run `paddock` in a project folder. The first run asks which of your hooks
+should run in sandboxes, saves `~/.config/paddock/config.yaml`, and checks your
+setup before starting. You can run the same setup on its own with
+`paddock init`, and the checks with `paddock doctor`:
 
 ```
 ✓ sbx           sbx version v0.49.2
@@ -141,12 +145,14 @@ Every warning comes with the command that fixes it.
 
 | Command | What it does |
 | --- | --- |
-| `paddock [DIR] [-- ARGS]` | Start or reattach to the sandbox for DIR (default: current folder). Arguments after `--` go to Claude Code. |
+| `paddock [DIR] [-- ARGS]` | Start, or rejoin, the sandbox for DIR (default: current folder). Arguments after `--` go to Claude Code. |
 | `paddock --dry-run [-v] [DIR]` | Show what would be shared and which hooks would run, without starting anything. `-v` lists blocked hooks and the `sbx` command. |
-| `paddock init` | First-run setup. Never overwrites an existing config. |
+| `paddock init` | Run the first-run setup, or re-check it. Never overwrites an existing config. |
 | `paddock doctor` | Check `sbx`, config, git identity, SSH agent, Claude login, GitHub token, skills, and out-of-date sandboxes. |
-| `paddock sync` | Re-import `~/.claude/skills` after you change them. |
-| `paddock ls`, `stop`, `rm`, `shell` | List sandboxes, or stop, remove, or open a shell in a project's sandbox. `rm` deletes its conversations. |
+| `paddock sync` | Copy `~/.claude/skills` into sandboxes after you change them. |
+| `paddock ls` | List your paddock sandboxes by project folder, with status and when each was last used. |
+| `paddock stop`, `shell` `[DIR]` | Stop a project's sandbox (conversations are kept), or open a shell in it. |
+| `paddock rm [-f] [DIR]` | Remove a project's sandbox and its conversations. Asks first unless you pass `-f`. |
 
 paddock refuses to mount `/` or your home folder; run it in a project folder.
 
