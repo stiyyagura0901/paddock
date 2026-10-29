@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -76,18 +77,19 @@ func Plugins(path string) ([]string, error) {
 	return out, nil
 }
 
-// Suggest returns an allow prefix for a host hook that should work inside a
+// Suggest returns an allow prefix for a host hook that can work inside a
 // sandbox, or false. A hook works there if it only prints (echo, printf) or
-// runs a script inside one of the linked ~/.claude entries, which the
-// sandbox sees at the same path. Anything else, such as scripts elsewhere
-// on the host or long inline shell, is left blocked.
-func Suggest(cmd string, links []string, home string) (string, bool) {
+// runs a script inside a folder of ~/.claude, which the sandbox sees at the
+// same path once that folder is linked. needLink names that folder when it
+// is not in links yet. Anything else, such as scripts elsewhere on the host
+// or long inline shell, is left blocked.
+func Suggest(cmd string, links []string, home string) (prefix, needLink string, ok bool) {
 	f := strings.Fields(cmd)
 	if len(f) == 0 {
-		return "", false
+		return "", "", false
 	}
 	if f[0] == "echo" || f[0] == "printf" {
-		return f[0] + " ", true
+		return f[0] + " ", "", true
 	}
 	i := 0
 	if (f[0] == "bash" || f[0] == "sh" || f[0] == "zsh") && len(f) > 1 {
@@ -101,11 +103,17 @@ func Suggest(cmd string, links []string, home string) (string, bool) {
 			break
 		}
 	}
-	top, _, _ := strings.Cut(rel, "/")
-	if rel == "" || !contains(links, top) {
-		return "", false
+	top, rest, _ := strings.Cut(rel, "/")
+	if rel == "" || rest == "" {
+		return "", "", false // not inside a folder of ~/.claude
 	}
-	return strings.Join(f[:i+1], " "), true
+	if fi, err := os.Stat(filepath.Join(home, ".claude", top)); err != nil || !fi.IsDir() {
+		return "", "", false
+	}
+	if !contains(links, top) {
+		needLink = top
+	}
+	return strings.Join(f[:i+1], " "), needLink, true
 }
 
 func contains(list []string, s string) bool {

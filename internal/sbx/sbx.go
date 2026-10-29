@@ -4,11 +4,13 @@ package sbx
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // Bin is the sbx executable; overridable for tests.
@@ -27,6 +29,37 @@ func Run(args ...string) (int, error) {
 		return 1, fmt.Errorf("running %s: %w", Bin, err)
 	}
 	return 0, nil
+}
+
+// Sandbox is one entry from `sbx ls --json`.
+type Sandbox struct {
+	Name       string    `json:"name"`
+	Status     string    `json:"status"`
+	Workspaces []string  `json:"workspaces"`
+	LastUsedAt time.Time `json:"last_used_at"`
+}
+
+// List returns all local sandboxes.
+func List() ([]Sandbox, error) {
+	out, err := exec.Command(Bin, "ls", "--json").Output()
+	if err != nil {
+		return nil, fmt.Errorf("%s ls: %w", Bin, err)
+	}
+	var list []Sandbox
+	if len(bytes.TrimSpace(out)) == 0 {
+		return nil, nil
+	}
+	if err := json.Unmarshal(out, &list); err != nil {
+		return nil, fmt.Errorf("%s ls: unexpected output: %w", Bin, err)
+	}
+	return list, nil
+}
+
+// Quiet runs sbx without a terminal and returns its combined output, so
+// callers can show their own message instead of sbx's.
+func Quiet(args ...string) (string, error) {
+	out, err := exec.Command(Bin, args...).CombinedOutput()
+	return strings.TrimSpace(string(out)), err
 }
 
 // Names returns the names of all local sandboxes.
