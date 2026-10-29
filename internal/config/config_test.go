@@ -87,12 +87,12 @@ func TestForAddsMatchingProject(t *testing.T) {
 func TestExtendsLocalFile(t *testing.T) {
 	dir := t.TempDir()
 	write(t, dir, "team.yaml", "env: [TEAM=1, SHARED]\nprojects:\n  /code/x:\n    mcp: [notion]\n")
-	path := write(t, dir, "config.yaml", "extends: team.yaml\nenv: [SHARED, MINE]\nprojects:\n  /code/x:\n    mcp: [notion, linear]\n")
+	path := write(t, dir, "config.yaml", "extends: team.yaml\nenv: [SHARED, MINE, TEAM=2]\nprojects:\n  /code/x:\n    mcp: [notion, linear]\n")
 	c, err := Load(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(c.Env, []string{"TEAM=1", "SHARED", "MINE"}) ||
+	if !reflect.DeepEqual(c.Env, []string{"TEAM=2", "SHARED", "MINE"}) ||
 		!reflect.DeepEqual(c.Projects["/code/x"].MCP, []string{"notion", "linear"}) || c.Extends != "team.yaml" {
 		t.Errorf("got %+v", c)
 	}
@@ -109,13 +109,13 @@ func TestExtendsHTTPSFallsBackToCache(t *testing.T) {
 	t.Cleanup(func() { CacheDir, HTTPClient = oldDir, oldClient })
 	CacheDir = func() (string, error) { return cache, nil }
 
-	up := true
+	up, body := true, "mcp: [notion]\n"
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !up {
 			http.Error(w, "down", http.StatusInternalServerError)
 			return
 		}
-		w.Write([]byte("mcp: [notion]\n"))
+		w.Write([]byte(body))
 	}))
 	defer srv.Close()
 	HTTPClient = srv.Client()
@@ -136,5 +136,12 @@ func TestExtendsHTTPSFallsBackToCache(t *testing.T) {
 	os.Chtimes(files[0], old, old)
 	if c, err := Load(path); err != nil || !reflect.DeepEqual(c.MCP, []string{"notion"}) {
 		t.Errorf("fallback: %+v, %v", c, err)
+	}
+
+	// A remote base may not widen what sandboxes can see.
+	up, body = true, "mounts: [\"~/.aws:ro\"]\n"
+	os.Chtimes(files[0], old, old)
+	if _, err := Load(path); err == nil {
+		t.Error("remote base with mounts accepted")
 	}
 }

@@ -224,8 +224,12 @@ extends: https://raw.githubusercontent.com/my-org/dev-setup/main/paddock.yaml
 `extends` takes a local path (relative paths start from your config's folder)
 or an https URL. A URL is cached for an hour; if it can't be fetched later,
 paddock warns and uses the cached copy. The base's entries come first and
-yours are added after them, project by project. A base can't extend another
-base.
+yours are added after them, project by project; for `env`, your value wins
+when both set the same key. A base can't extend another base.
+
+A base fetched from a URL can't set `mounts` or `projects`, because the file
+can change without you noticing and shouldn't be able to share more of your
+machine. Put those in your own config, or use a local file you control.
 
 ## What's shared, and what isn't
 

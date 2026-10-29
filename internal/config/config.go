@@ -172,7 +172,7 @@ func (c Config) For(dir, home string) Config {
 		out.Hooks.Allow = merge(out.Hooks.Allow, p.Hooks.Allow)
 		out.Plugins.Disable = merge(out.Plugins.Disable, p.Plugins.Disable)
 		out.Mounts = merge(out.Mounts, p.Mounts)
-		out.Env = merge(out.Env, p.Env)
+		out.Env = mergeEnv(out.Env, p.Env)
 		out.MCP = merge(out.MCP, p.MCP)
 	}
 	return out
@@ -184,6 +184,23 @@ func resolve(p, home string) string {
 		return r
 	}
 	return p
+}
+
+// mergeEnv is merge for KEY=VALUE entries: a key set in b replaces the
+// same key from a, in a's position.
+func mergeEnv(a, b []string) []string {
+	var out []string
+	at := map[string]int{}
+	for _, e := range append(append([]string{}, a...), b...) {
+		k, _, _ := strings.Cut(e, "=")
+		if i, ok := at[k]; ok {
+			out[i] = e
+			continue
+		}
+		at[k] = len(out)
+		out = append(out, e)
+	}
+	return out
 }
 
 // merge returns a followed by b, without duplicates. It always copies.
@@ -266,6 +283,11 @@ func loadBase(ref, from string) (Config, error) {
 	if base.Extends != "" {
 		return Config{}, fmt.Errorf("%s: extends can only be one level deep", ref)
 	}
+	// A remote file can change without you noticing, so it may not widen
+	// what sandboxes can see on this machine.
+	if strings.HasPrefix(ref, "https://") && (len(base.Mounts) > 0 || len(base.Projects) > 0) {
+		return Config{}, fmt.Errorf("%s: a base config fetched from a URL can't set mounts or projects; put those in your own config", ref)
+	}
 	return base, nil
 }
 
@@ -335,7 +357,7 @@ func extend(base, c Config) Config {
 	out.Hooks.Allow = merge(base.Hooks.Allow, c.Hooks.Allow)
 	out.Plugins.Disable = merge(base.Plugins.Disable, c.Plugins.Disable)
 	out.Mounts = merge(base.Mounts, c.Mounts)
-	out.Env = merge(base.Env, c.Env)
+	out.Env = mergeEnv(base.Env, c.Env)
 	out.MCP = merge(base.MCP, c.MCP)
 	if len(base.Projects)+len(c.Projects) > 0 {
 		out.Projects = map[string]Project{}
@@ -350,7 +372,7 @@ func extend(base, c Config) Config {
 			Hooks:   Hooks{Allow: merge(b.Hooks.Allow, p.Hooks.Allow)},
 			Plugins: Plugins{Disable: merge(b.Plugins.Disable, p.Plugins.Disable)},
 			Mounts:  merge(b.Mounts, p.Mounts),
-			Env:     merge(b.Env, p.Env),
+			Env:     mergeEnv(b.Env, p.Env),
 			MCP:     merge(b.MCP, p.MCP),
 		}
 	}
