@@ -18,6 +18,8 @@ paddock                # Claude Code in this project's sandbox, with your setup
 Before starting anything, `paddock --dry-run` shows exactly what the sandbox
 will get:
 
+![paddock --dry-run showing the sandbox name, the project folder Claude can edit, the read-only config, which host hooks will run, and the plugins](docs/demo.gif)
+
 ```
 paddock would create a new sandbox for my-project.
 
