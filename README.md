@@ -100,6 +100,18 @@ paddock -- --continue   # resume the last conversation
 paddock -- --resume     # pick one
 ```
 
+### I want Claude to review a PR from someone I don't know
+
+```sh
+paddock review https://github.com/OWNER/REPO/pull/123   # or OWNER/REPO#123, or 123 in a clone
+```
+
+paddock clones the PR into a fresh folder with git hooks switched off, so
+nothing from the PR runs on your machine. Claude reviews it in a throwaway
+sandbox where no hooks run at all, not even the host hooks you allowed, and
+the sandbox and the clone are deleted when you exit. Add `--keep` to keep
+them. It needs the [GitHub CLI](https://cli.github.com) (`gh`), logged in.
+
 ## Install
 
 You need [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) (`sbx`)
@@ -147,6 +159,7 @@ Every warning comes with the command that fixes it.
 | --- | --- |
 | `paddock [DIR] [-- ARGS]` | Start, or rejoin, the sandbox for DIR (default: current folder). Arguments after `--` go to Claude Code. |
 | `paddock --dry-run [-v] [DIR]` | Show what would be shared and which hooks would run, without starting anything. `-v` lists blocked hooks and the `sbx` command. |
+| `paddock review [--keep] PR [-- ARGS]` | Have Claude review a GitHub pull request (a URL, `OWNER/REPO#N`, or `N` for this folder's repo) in a throwaway sandbox with no hooks. Arguments after `--` replace the review prompt. Takes `--dry-run`. |
 | `paddock init` | Run the first-run setup, or re-check it. Never overwrites an existing config. |
 | `paddock doctor` | Check `sbx`, config, git identity, SSH agent, Claude login, GitHub token, skills, and out-of-date sandboxes. |
 | `paddock sync` | Copy `~/.claude/skills` into sandboxes after you change them. |

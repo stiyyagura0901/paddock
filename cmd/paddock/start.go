@@ -23,10 +23,17 @@ type plan struct {
 	mounts                     []string // host config, mounted read-only
 	extra                      []string // cfg.Mounts with ~ expanded
 	claudeArgs                 []string
+	rm                         bool   // remove the sandbox when Claude exits
+	review                     string // the PR under review, for display
+	prompt                     string // the prompt paddock gives Claude, for display
+	command                    string // the paddock command that starts it, for display
 }
 
 func (p plan) sbxArgs() []string {
 	a := []string{"run", "--name", p.name}
+	if p.rm {
+		a = append(a, "--rm")
+	}
 	if !p.exists {
 		a = append(a, "--kit", p.kitDir)
 	}
@@ -105,16 +112,8 @@ func start(args []string) int {
 	}
 	p.cfg, p.base = cfg.For(p.dir, home), cfg.Extends
 	p.name = sandbox.Name(p.dir)
-	p.hostDir = filepath.Join(home, ".claude")
-	if p.kitDir, err = kitDir(); err != nil {
+	if err := p.fill(home); err != nil {
 		return fail(err)
-	}
-	p.mounts = hostMounts(p.hostDir, p.cfg)
-	p.extra = extraMounts(p.cfg, home)
-	if sbx.Installed() {
-		if p.exists, err = sbx.Exists(p.name); err != nil {
-			return fail(err)
-		}
 	}
 
 	opts := kitOptions(p.hostDir, p.cfg)
@@ -138,6 +137,21 @@ func start(args []string) int {
 		fmt.Printf("Creating a sandbox for %s. The first start takes a little longer.\n", tilde(p.dir))
 	}
 	return exit(sbx.Run(p.sbxArgs()...))
+}
+
+// fill completes a plan whose name, dir and cfg are set.
+func (p *plan) fill(home string) error {
+	var err error
+	p.hostDir = filepath.Join(home, ".claude")
+	if p.kitDir, err = kitDir(); err != nil {
+		return err
+	}
+	p.mounts = hostMounts(p.hostDir, p.cfg)
+	p.extra = extraMounts(p.cfg, home)
+	if sbx.Installed() {
+		p.exists, err = sbx.Exists(p.name)
+	}
+	return err
 }
 
 // hostMounts lists the host config paths mounted read-only into sandboxes.
@@ -202,6 +216,9 @@ func show(p plan, verbose bool) int {
 	fmt.Println()
 	fmt.Printf("  Sandbox   %s\n", p.name)
 	fmt.Printf("  Project   %s  (Claude can edit)\n", tilde(p.dir))
+	if p.review != "" {
+		fmt.Printf("  Review    %s\n", p.review)
+	}
 	if p.base != "" {
 		fmt.Printf("  Base      %s\n", p.base)
 	}
@@ -278,9 +295,22 @@ func show(p plan, verbose bool) int {
 				args[i] = k + "=…" // keep env values off the screen
 			}
 		}
+		for i, a := range args {
+			if strings.ContainsAny(a, " \"'#$&;|<>()*?`\\") {
+				args[i] = "'" + strings.ReplaceAll(a, "'", `'\''`) + "'"
+			}
+		}
 		fmt.Println("  Command   sbx " + strings.Join(args, " "))
 	}
+	if p.prompt != "" {
+		fmt.Println()
+		fmt.Printf("  Prompt    %s\n", p.prompt)
+	}
+	command := p.command
+	if command == "" {
+		command = "paddock"
+	}
 	fmt.Println()
-	fmt.Println("Nothing was started. Run paddock without --dry-run to start it.")
+	fmt.Printf("Nothing was started. Run %s without --dry-run to start it.\n", command)
 	return 0
 }

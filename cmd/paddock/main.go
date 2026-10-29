@@ -23,6 +23,9 @@ Usage:
                         start, or rejoin, the sandbox for DIR (default: this folder)
   paddock --dry-run [-v] [DIR]
                         show what the sandbox would get, without starting it
+  paddock review [--keep] PR [-- CLAUDE_ARGS...]
+                        have Claude review a GitHub pull request in a throwaway
+                        sandbox with no hooks (PR: URL, OWNER/REPO#N, or N)
   paddock init          set up, or check, paddock (runs on first use too)
   paddock doctor        check your setup and print fixes
   paddock sync          copy your skills into sandboxes
@@ -64,6 +67,8 @@ func run(args []string) int {
 		return withSbx(runSync)
 	case "ls":
 		return withSbx(runList)
+	case "review":
+		return runReview(args[1:])
 	case "stop", "rm", "shell":
 		return withSbx(func() int { return runManage(cmd, args[1:]) })
 	}
