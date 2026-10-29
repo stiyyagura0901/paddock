@@ -16,21 +16,35 @@ import (
 // plan is everything paddock needs to start or rejoin a sandbox.
 type plan struct {
 	name, dir, hostDir, kitDir string
+	base                       string // the config's extends, for display
 	cfg                        config.Config
 	noConfig                   bool
 	exists, stale              bool
-	mounts                     []string
+	mounts                     []string // host config, mounted read-only
+	extra                      []string // cfg.Mounts with ~ expanded
 	claudeArgs                 []string
 }
 
 func (p plan) sbxArgs() []string {
-	if p.exists {
-		return append([]string{"run", "--name", p.name}, p.claudeArgs...)
+	a := []string{"run", "--name", p.name}
+	if !p.exists {
+		a = append(a, "--kit", p.kitDir)
 	}
-	a := []string{"run", "--name", p.name, "--kit", p.kitDir, sandbox.Agent, p.dir}
+	// sbx applies -e on re-attach too; mounts and MCP only on create.
+	for _, e := range p.cfg.Env {
+		a = append(a, "-e", e)
+	}
+	if p.exists {
+		return append(a, p.claudeArgs...)
+	}
+	for _, m := range p.cfg.MCP {
+		a = append(a, "--static-mcp", m)
+	}
+	a = append(a, sandbox.Agent, p.dir)
 	for _, m := range p.mounts {
 		a = append(a, m+":ro")
 	}
+	a = append(a, p.extra...)
 	return append(a, p.claudeArgs...)
 }
 
@@ -85,15 +99,18 @@ func start(args []string) int {
 			p.noConfig = false
 		}
 	}
-	if p.cfg, err = config.Load(path); err != nil {
+	cfg, err := config.Load(path)
+	if err != nil {
 		return fail(err)
 	}
+	p.cfg, p.base = cfg.For(p.dir, home), cfg.Extends
 	p.name = sandbox.Name(p.dir)
 	p.hostDir = filepath.Join(home, ".claude")
 	if p.kitDir, err = kitDir(); err != nil {
 		return fail(err)
 	}
 	p.mounts = hostMounts(p.hostDir, p.cfg)
+	p.extra = extraMounts(p.cfg, home)
 	if sbx.Installed() {
 		if p.exists, err = sbx.Exists(p.name); err != nil {
 			return fail(err)
@@ -101,7 +118,7 @@ func start(args []string) int {
 	}
 
 	opts := kitOptions(p.hostDir, p.cfg)
-	fp := kit.Fingerprint(opts, p.mounts)
+	fp := fingerprint(p.hostDir, home, p.cfg)
 	rec := recordedFingerprint(p.name)
 	p.stale = p.exists && rec != "" && rec != fp
 	if dryRun {
@@ -134,6 +151,28 @@ func hostMounts(hostDir string, cfg config.Config) []string {
 	return out
 }
 
+// extraMounts returns cfg.Mounts with ~ expanded, keeping any ":ro".
+func extraMounts(cfg config.Config, home string) []string {
+	var out []string
+	for _, m := range cfg.Mounts {
+		out = append(out, config.ExpandHome(m, home))
+	}
+	return out
+}
+
+// fingerprint is what a sandbox created now with cfg (already narrowed to
+// its project with For) records. It covers everything fixed at creation.
+func fingerprint(hostDir, home string, cfg config.Config) string {
+	mounts := append(hostMounts(hostDir, cfg), extraMounts(cfg, home)...)
+	for _, e := range cfg.Env {
+		mounts = append(mounts, "env:"+e)
+	}
+	for _, m := range cfg.MCP {
+		mounts = append(mounts, "mcp:"+m)
+	}
+	return kit.Fingerprint(kitOptions(hostDir, cfg), mounts)
+}
+
 // show prints what starting the sandbox would do, most important first.
 func show(p plan, verbose bool) int {
 	settings := filepath.Join(p.hostDir, "settings.json")
@@ -163,11 +202,32 @@ func show(p plan, verbose bool) int {
 	fmt.Println()
 	fmt.Printf("  Sandbox   %s\n", p.name)
 	fmt.Printf("  Project   %s  (Claude can edit)\n", tilde(p.dir))
+	if p.base != "" {
+		fmt.Printf("  Base      %s\n", p.base)
+	}
 	var names []string
 	for _, m := range p.mounts {
 		names = append(names, filepath.Base(m))
 	}
 	fmt.Printf("  Config    %s: %s  (read-only)\n", tilde(p.hostDir), strings.Join(names, ", "))
+	for _, m := range p.extra {
+		if path, ok := strings.CutSuffix(m, ":ro"); ok {
+			fmt.Printf("  Also      %s  (read-only)\n", tilde(path))
+		} else {
+			fmt.Printf("  Also      %s  (Claude can edit)\n", tilde(m))
+		}
+	}
+	if len(p.cfg.Env) > 0 {
+		var keys []string
+		for _, e := range p.cfg.Env {
+			k, _, _ := strings.Cut(e, "=")
+			keys = append(keys, k) // never the value
+		}
+		fmt.Printf("  Env       %s\n", strings.Join(keys, ", "))
+	}
+	if len(p.cfg.MCP) > 0 {
+		fmt.Printf("  MCP       %s\n", strings.Join(p.cfg.MCP, ", "))
+	}
 
 	var allowed, blocked []hostcfg.Hook
 	for _, h := range hooks {
@@ -212,7 +272,13 @@ func show(p plan, verbose bool) int {
 
 	if verbose {
 		fmt.Println()
-		fmt.Println("  Command   sbx " + strings.Join(p.sbxArgs(), " "))
+		args := p.sbxArgs()
+		for i := 1; i < len(args); i++ {
+			if k, _, ok := strings.Cut(args[i], "="); ok && args[i-1] == "-e" {
+				args[i] = k + "=…" // keep env values off the screen
+			}
+		}
+		fmt.Println("  Command   sbx " + strings.Join(args, " "))
 	}
 	fmt.Println()
 	fmt.Println("Nothing was started. Run paddock without --dry-run to start it.")

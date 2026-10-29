@@ -179,13 +179,53 @@ hooks:
 plugins:
   # Host plugins to turn off inside the sandbox, as name@marketplace.
   disable: []
+
+# Extra host folders for every sandbox. Add :ro to make one read-only.
+mounts:
+  - "~/code/shared-lib:ro"
+
+# Environment variables: KEY=VALUE, or just KEY to pass this machine's value.
+env:
+  - "NODE_ENV=development"
+  - "NPM_TOKEN"
+
+# MCP servers registered with sbx mcp add.
+mcp:
+  - notion
+
+# Additions for one project folder, on top of everything above. Each key
+# takes link, hooks, plugins, mounts, env and mcp.
+projects:
+  ~/code/my-project:
+    mounts: ["~/data/fixtures:ro"]
+    env: ["DATABASE_URL"]
 ```
 
 Unknown keys are an error, so a typo can't silently change what runs.
+`paddock --dry-run` lists extra mounts, env variable names (never their
+values) and MCP servers.
+
+Per-project settings live in your config, never in the repo, so a cloned repo
+can't give itself hooks, mounts or env.
 
 Settings apply when a sandbox is created. After you change them, `paddock` and
 `paddock doctor` point out sandboxes created with older settings; recreate one
-with `paddock rm` then `paddock`.
+with `paddock rm` then `paddock`. Env entries also apply when you rejoin a
+sandbox.
+
+### Sharing a config with your team
+
+Put the settings everyone needs in one file and point each config at it:
+
+```yaml
+extends: https://raw.githubusercontent.com/my-org/dev-setup/main/paddock.yaml
+```
+
+`extends` takes a local path (relative paths start from your config's folder)
+or an https URL. A URL is cached for an hour; if it can't be fetched later,
+paddock warns and uses the cached copy. The base's entries come first and
+yours are added after them, project by project. A base can't extend another
+base.
 
 ## What's shared, and what isn't
 
@@ -193,6 +233,7 @@ with `paddock rm` then `paddock`.
 | --- | --- |
 | The project folder | Read-write, at the same path |
 | `~/.claude` entries in `link:` and `settings.json` | Read-only |
+| Folders in `mounts:` | Read-write, or read-only with `:ro` |
 | Model, effort, `env`, plugins, marketplaces, `permissions.allow` | Copied into the sandbox's own settings |
 | Hooks matching `hooks.allow` | Installed as managed hooks; all others blocked |
 | Skills | Copied by `sbx skills import` (`paddock sync`) |

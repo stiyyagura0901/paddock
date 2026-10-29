@@ -61,7 +61,11 @@ func Run(e Env) []Result {
 	case !exists(e.ConfigPath):
 		add(Result{Warn, "config", "none; using defaults", "run: paddock init"})
 	default:
-		add(Result{Level: OK, What: "config", Detail: e.ConfigPath})
+		detail := e.ConfigPath
+		if cfg.Extends != "" {
+			detail += " (extends " + cfg.Extends + ")"
+		}
+		add(Result{Level: OK, What: "config", Detail: detail})
 	}
 
 	if !exists(e.HostDir) {

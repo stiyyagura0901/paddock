@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/stiyyagura0901/paddock/internal/config"
-	"github.com/stiyyagura0901/paddock/internal/kit"
 	"github.com/stiyyagura0901/paddock/internal/sandbox"
 	"github.com/stiyyagura0901/paddock/internal/sbx"
 )
@@ -56,13 +55,13 @@ func runList() int {
 		fmt.Println("No paddock sandboxes yet.")
 		fmt.Println("Start one in a project folder:  cd ~/code/my-project && paddock")
 	} else {
-		current := currentFingerprint()
+		cfg, cfgErr := loadConfig()
 		sort.Slice(mine, func(i, j int) bool { return mine[i].LastUsedAt.After(mine[j].LastUsedAt) })
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
 		fmt.Fprintln(w, "PROJECT\tSTATUS\tLAST USED")
 		for _, s := range mine {
 			status := s.Status
-			if rec := recordedFingerprint(s.Name); current != "" && rec != "" && rec != current {
+			if rec := recordedFingerprint(s.Name); cfgErr == nil && rec != "" && rec != currentFingerprint(cfg, s.Workspaces[0]) {
 				status += " (older settings)"
 			}
 			fmt.Fprintf(w, "%s\t%s\t%s\n", tilde(s.Workspaces[0]), status, ago(s.LastUsedAt))
@@ -184,31 +183,23 @@ func recordFingerprint(name, fp string) error {
 	return os.WriteFile(path, []byte(fp+"\n"), 0o644)
 }
 
-// currentFingerprint is what a sandbox created now would record, or "" if
-// the config can't be read.
-func currentFingerprint() string {
-	path, err := config.Path()
-	if err != nil {
-		return ""
-	}
-	cfg, err := config.Load(path)
-	if err != nil {
-		return ""
-	}
-	hostDir := filepath.Join(homeDir(), ".claude")
-	return kit.Fingerprint(kitOptions(hostDir, cfg), hostMounts(hostDir, cfg))
+// currentFingerprint is what a sandbox created now for project folder dir
+// would record.
+func currentFingerprint(cfg config.Config, dir string) string {
+	home := homeDir()
+	return fingerprint(filepath.Join(home, ".claude"), home, cfg.For(dir, home))
 }
 
-// staleProjects lists project folders whose sandbox was created with a
-// different fingerprint than current.
-func staleProjects(current string) []string {
+// staleProjects lists project folders whose sandbox was created with
+// different settings than cfg gives it now.
+func staleProjects(cfg config.Config) []string {
 	mine, _, err := ours()
 	if err != nil {
 		return nil
 	}
 	var out []string
 	for _, s := range mine {
-		if rec := recordedFingerprint(s.Name); rec != "" && rec != current {
+		if rec := recordedFingerprint(s.Name); rec != "" && rec != currentFingerprint(cfg, s.Workspaces[0]) {
 			out = append(out, tilde(s.Workspaces[0]))
 		}
 	}
