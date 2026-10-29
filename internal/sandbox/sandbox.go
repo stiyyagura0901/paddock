@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -46,6 +47,37 @@ func ResolveDir(dir, home string) (string, error) {
 func Name(dir string) string {
 	sum := sha256.Sum256([]byte(dir))
 	return fmt.Sprintf("%s-%s-%s", Agent, sanitize(filepath.Base(dir)), hex.EncodeToString(sum[:])[:6])
+}
+
+// NamedName returns the name of an extra sandbox called name for a
+// project directory, next to the one Name gives it.
+func NamedName(dir, name string) string {
+	return Name(dir) + "-" + name
+}
+
+var nameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,30}$`)
+
+// CheckName lowercases a sandbox name given with --name and checks it.
+func CheckName(name string) (string, error) {
+	n := strings.ToLower(name)
+	if !nameRe.MatchString(n) {
+		return "", fmt.Errorf("%q can't be a sandbox name: use up to 31 lowercase letters, digits and dashes, starting with a letter or digit. For example: paddock --name fix-login", name)
+	}
+	return n, nil
+}
+
+// Owned reports whether a sandbox called sbxName with first workspace ws
+// is one paddock made: the project's main sandbox (named is "") or one
+// of its named ones.
+func Owned(sbxName, ws string) (named string, ok bool) {
+	main := Name(ws)
+	if sbxName == main {
+		return "", true
+	}
+	if rest, found := strings.CutPrefix(sbxName, main+"-"); found && nameRe.MatchString(rest) {
+		return rest, true
+	}
+	return "", false
 }
 
 func sanitize(s string) string {
