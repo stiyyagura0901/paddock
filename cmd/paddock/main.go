@@ -21,20 +21,30 @@ const usage = `paddock: run Claude Code in a Docker Sandbox with your own setup.
 Usage:
   paddock [DIR] [-- CLAUDE_ARGS...]
                         start, or rejoin, the sandbox for DIR (default: this folder)
-  paddock --dry-run [-v] [DIR]
+  paddock --name NAME [DIR] [-- CLAUDE_ARGS...]
+                        start, or rejoin, another sandbox for DIR, working on its
+                        own clone of the git repo, so several can run at once
+  paddock --dry-run [-v] [--name NAME] [DIR]
                         show what the sandbox would get, without starting it
+  paddock review [--keep] PR [-- CLAUDE_ARGS...]
+                        have Claude review a GitHub pull request in a throwaway
+                        sandbox with no hooks (PR: URL, OWNER/REPO#N, or N)
   paddock init          set up, or check, paddock (runs on first use too)
   paddock doctor        check your setup and print fixes
   paddock sync          copy your skills into sandboxes
   paddock ls            list your paddock sandboxes
-  paddock stop [DIR]    stop DIR's sandbox; its conversations are kept
-  paddock rm [-f] [DIR] remove DIR's sandbox and its conversations
-  paddock shell [DIR]   open a shell in DIR's sandbox
+  paddock stop [--name NAME] [DIR]
+                        stop DIR's sandbox; its conversations are kept
+  paddock rm [-f] [--name NAME] [DIR]
+                        remove DIR's sandbox and its conversations
+  paddock shell [--name NAME] [DIR]
+                        open a shell in DIR's sandbox
   paddock version       print the version
 
 Examples:
-  paddock -- --continue   resume the last conversation
-  paddock -- --resume     pick a conversation to resume
+  paddock -- --continue      resume the last conversation
+  paddock -- --resume        pick a conversation to resume
+  paddock --name fix-login   a second session on this repo, on its own clone
 `
 
 // version is set at release build time.
@@ -64,6 +74,8 @@ func run(args []string) int {
 		return withSbx(runSync)
 	case "ls":
 		return withSbx(runList)
+	case "review":
+		return runReview(args[1:])
 	case "stop", "rm", "shell":
 		return withSbx(func() int { return runManage(cmd, args[1:]) })
 	}

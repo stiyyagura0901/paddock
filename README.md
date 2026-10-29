@@ -102,6 +102,44 @@ paddock -- --continue   # resume the last conversation
 paddock -- --resume     # pick one
 ```
 
+### I want several Claude sessions on one repo at once
+
+Give each extra session a name:
+
+```sh
+paddock --name fix-login        # a second sandbox for this repo
+paddock --name docs             # and a third
+```
+
+A named sandbox doesn't edit your folder. It works on its own clone of the
+repo, starting from the branch you have checked out, so parallel sessions
+never touch the same files. Each named sandbox is a git remote of your repo;
+bring its commits back while the sandbox is running:
+
+```sh
+git fetch sandbox-claude-my-project-3f9a1c-fix-login
+git log main..sandbox-claude-my-project-3f9a1c-fix-login/main   # what it did on main
+```
+
+paddock prints the exact `git fetch` command when the sandbox starts and when
+you exit. Fetched commits stay in your repo after the sandbox is removed;
+commits you haven't fetched, and uncommitted work, are lost with it.
+`--name` needs the top folder of the repo's main checkout, not a subfolder
+or a `git worktree`. `paddock ls` shows each sandbox's name, and `stop`, `rm`
+and `shell` take `--name` too.
+
+### I want Claude to review a PR from someone I don't know
+
+```sh
+paddock review https://github.com/OWNER/REPO/pull/123   # or OWNER/REPO#123, or 123 in a clone
+```
+
+paddock clones the PR into a fresh folder with git hooks switched off, so
+nothing from the PR runs on your machine. Claude reviews it in a throwaway
+sandbox where no hooks run at all, not even the host hooks you allowed, and
+the sandbox and the clone are deleted when you exit. Add `--keep` to keep
+them. It needs the [GitHub CLI](https://cli.github.com) (`gh`), logged in.
+
 ## Install
 
 You need [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) (`sbx`)
@@ -148,13 +186,15 @@ Every warning comes with the command that fixes it.
 | Command | What it does |
 | --- | --- |
 | `paddock [DIR] [-- ARGS]` | Start, or rejoin, the sandbox for DIR (default: current folder). Arguments after `--` go to Claude Code. |
-| `paddock --dry-run [-v] [DIR]` | Show what would be shared and which hooks would run, without starting anything. `-v` lists blocked hooks and the `sbx` command. |
+| `paddock --name NAME [DIR] [-- ARGS]` | Start, or rejoin, another sandbox for DIR that works on its own clone of the git repo, so several sessions can run at once. |
+| `paddock --dry-run [-v] [--name NAME] [DIR]` | Show what would be shared and which hooks would run, without starting anything. `-v` lists blocked hooks and the `sbx` command. |
+| `paddock review [--keep] PR [-- ARGS]` | Have Claude review a GitHub pull request (a URL, `OWNER/REPO#N`, or `N` for this folder's repo) in a throwaway sandbox with no hooks. Arguments after `--` replace the review prompt. Takes `--dry-run`. |
 | `paddock init` | Run the first-run setup, or re-check it. Never overwrites an existing config. |
 | `paddock doctor` | Check `sbx`, config, git identity, SSH agent, Claude login, GitHub token, skills, and out-of-date sandboxes. |
 | `paddock sync` | Copy `~/.claude/skills` into sandboxes after you change them. |
-| `paddock ls` | List your paddock sandboxes by project folder, with status and when each was last used. |
-| `paddock stop`, `shell` `[DIR]` | Stop a project's sandbox (conversations are kept), or open a shell in it. |
-| `paddock rm [-f] [DIR]` | Remove a project's sandbox and its conversations. Asks first unless you pass `-f`. |
+| `paddock ls` | List your paddock sandboxes by project folder and name, with status and when each was last used. |
+| `paddock stop`, `shell` `[--name NAME] [DIR]` | Stop a project's sandbox (conversations are kept), or open a shell in it. |
+| `paddock rm [-f] [--name NAME] [DIR]` | Remove a project's sandbox and its conversations. Asks first unless you pass `-f`. |
 
 paddock refuses to mount `/` or your home folder; run it in a project folder.
 
@@ -237,7 +277,7 @@ machine. Put those in your own config, or use a local file you control.
 
 | From your machine | In the sandbox |
 | --- | --- |
-| The project folder | Read-write, at the same path |
+| The project folder | Read-write, at the same path (a named sandbox reads it and works on its own clone) |
 | `~/.claude` entries in `link:` and `settings.json` | Read-only |
 | Folders in `mounts:` | Read-write, or read-only with `:ro` |
 | Model, effort, `env`, plugins, marketplaces, `permissions.allow` | Copied into the sandbox's own settings |

@@ -15,35 +15,64 @@ import (
 	"github.com/stiyyagura0901/paddock/internal/sbx"
 )
 
+// owned is a sandbox paddock made.
+type owned struct {
+	sbx.Sandbox
+	named string // "" for a project's main sandbox
+}
+
 // ours returns the sandboxes paddock created: those whose name is the one
-// paddock derives from their project folder. The rest are counted.
-func ours() (mine []sbx.Sandbox, others int, err error) {
+// paddock derives from their project folder, or a named one next to it.
+// The rest are counted.
+func ours() (mine []owned, others int, err error) {
 	list, err := sbx.List()
 	if err != nil {
 		return nil, 0, err
 	}
+	mine, others = match(list)
+	return mine, others, nil
+}
+
+func match(list []sbx.Sandbox) (mine []owned, others int) {
 	for _, s := range list {
-		if len(s.Workspaces) > 0 && s.Name == sandbox.Name(s.Workspaces[0]) {
-			mine = append(mine, s)
+		if len(s.Workspaces) == 0 {
+			others++
+		} else if named, ok := sandbox.Owned(s.Name, s.Workspaces[0]); ok {
+			mine = append(mine, owned{s, named})
 		} else {
 			others++
 		}
 	}
-	return mine, others, nil
+	return mine, others
 }
 
-// find returns the paddock sandbox for a project folder, if there is one.
-func find(dir string) (*sbx.Sandbox, error) {
+// find returns the main paddock sandbox for a project folder, if there is
+// one.
+func find(dir string) (*owned, error) {
+	return findNamed(dir, "")
+}
+
+// findNamed returns the project folder's sandbox with the given name ("" for
+// the main one), if there is one.
+func findNamed(dir, named string) (*owned, error) {
 	mine, _, err := ours()
 	if err != nil {
 		return nil, err
 	}
 	for i := range mine {
-		if mine[i].Workspaces[0] == dir {
+		if mine[i].Workspaces[0] == dir && mine[i].named == named {
 			return &mine[i], nil
 		}
 	}
 	return nil, nil
+}
+
+// label names a project's sandbox in messages.
+func label(dir, named string) string {
+	if named == "" {
+		return "sandbox for " + dir
+	}
+	return fmt.Sprintf("sandbox %q for %s", named, dir)
 }
 
 func runList() int {
@@ -58,13 +87,17 @@ func runList() int {
 		cfg, cfgErr := loadConfig()
 		sort.Slice(mine, func(i, j int) bool { return mine[i].LastUsedAt.After(mine[j].LastUsedAt) })
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-		fmt.Fprintln(w, "PROJECT\tSTATUS\tLAST USED")
+		fmt.Fprintln(w, "PROJECT\tNAME\tSTATUS\tLAST USED")
 		for _, s := range mine {
+			named := s.named
+			if named == "" {
+				named = "-"
+			}
 			status := s.Status
 			if rec := recordedFingerprint(s.Name); cfgErr == nil && rec != "" && rec != currentFingerprint(cfg, s.Workspaces[0]) {
 				status += " (older settings)"
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\n", tilde(s.Workspaces[0]), status, ago(s.LastUsedAt))
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", tilde(s.Workspaces[0]), named, status, ago(s.LastUsedAt))
 		}
 		w.Flush()
 	}
@@ -76,9 +109,18 @@ func runList() int {
 
 func runManage(cmd string, args []string) int {
 	force := false
+	named := ""
 	var rest []string
-	for _, a := range args {
-		switch {
+	for len(args) > 0 {
+		name, used, err := nameArg(args)
+		if err != nil {
+			return fail(err)
+		}
+		if used > 0 {
+			named, args = name, args[used:]
+			continue
+		}
+		switch a := args[0]; {
 		case cmd == "rm" && (a == "-f" || a == "--force"):
 			force = true
 		case strings.HasPrefix(a, "-"):
@@ -86,6 +128,7 @@ func runManage(cmd string, args []string) int {
 		default:
 			rest = append(rest, a)
 		}
+		args = args[1:]
 	}
 	if len(rest) > 1 {
 		return fail(fmt.Errorf("%s takes one project folder, got %d", cmd, len(rest)))
@@ -94,29 +137,30 @@ func runManage(cmd string, args []string) int {
 	if err != nil {
 		return fail(err)
 	}
-	s, err := find(dir)
+	s, err := findNamed(dir, named)
 	if err != nil {
 		return fail(err)
 	}
+	what := label(tilde(dir), named)
 	if s == nil {
-		startCmd := "paddock"
+		startCmd := "paddock" + nameFlag(named)
 		if len(rest) > 0 {
 			startCmd += " " + rest[0]
 		}
-		fmt.Printf("There's no sandbox for %s yet. Start one with: %s\n", tilde(dir), startCmd)
+		fmt.Printf("There's no %s yet. Start one with: %s\n", what, startCmd)
 		return 1
 	}
 
 	switch cmd {
 	case "stop":
 		if s.Status == "stopped" {
-			fmt.Printf("The sandbox for %s is already stopped.\n", tilde(dir))
+			fmt.Printf("The %s is already stopped.\n", what)
 			return 0
 		}
 		if out, err := sbx.Quiet("stop", s.Name); err != nil {
-			return fail(fmt.Errorf("couldn't stop the sandbox for %s:\n%s", tilde(dir), out))
+			return fail(fmt.Errorf("couldn't stop the %s:\n%s", what, out))
 		}
-		fmt.Printf("Stopped the sandbox for %s. Its conversations are kept; run paddock to carry on.\n", tilde(dir))
+		fmt.Printf("Stopped the %s. Its conversations are kept; run paddock%s to carry on.\n", what, nameFlag(named))
 		return 0
 
 	case "rm":
@@ -124,16 +168,20 @@ func runManage(cmd string, args []string) int {
 			if !interactive() {
 				return fail(fmt.Errorf("removing deletes the sandbox's conversations; add --force to do it without asking"))
 			}
-			if !confirm(fmt.Sprintf("Remove the sandbox for %s? Its conversations will be deleted.", tilde(dir)), false) {
+			q := fmt.Sprintf("Remove the %s? Its conversations will be deleted.", what)
+			if named != "" {
+				q += fmt.Sprintf(" Commits you haven't fetched (git fetch sandbox-%s) and uncommitted work in it will be lost.", s.Name)
+			}
+			if !confirm(q, false) {
 				fmt.Println("Kept it.")
 				return 0
 			}
 		}
 		if out, err := sbx.Quiet("rm", "--force", s.Name); err != nil {
-			return fail(fmt.Errorf("couldn't remove the sandbox for %s:\n%s", tilde(dir), out))
+			return fail(fmt.Errorf("couldn't remove the %s:\n%s", what, out))
 		}
 		os.Remove(recordPath(s.Name))
-		fmt.Printf("Removed the sandbox for %s.\n", tilde(dir))
+		fmt.Printf("Removed the %s.\n", what)
 		return 0
 
 	default: // shell
@@ -200,7 +248,11 @@ func staleProjects(cfg config.Config) []string {
 	var out []string
 	for _, s := range mine {
 		if rec := recordedFingerprint(s.Name); rec != "" && rec != currentFingerprint(cfg, s.Workspaces[0]) {
-			out = append(out, tilde(s.Workspaces[0]))
+			p := tilde(s.Workspaces[0])
+			if s.named != "" {
+				p += " (" + s.named + ")"
+			}
+			out = append(out, p)
 		}
 	}
 	return out
