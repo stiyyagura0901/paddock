@@ -35,6 +35,11 @@ paddock would create a new sandbox for my-project.
 Nothing was started. Run paddock without --dry-run to start it.
 ```
 
+**Jump to:** [Problems it solves](#problems-paddock-solves) ·
+[Install](#install) · [Commands](#commands) ·
+[Configuration](#configuration) · [What's shared](#whats-shared-and-what-isnt) ·
+[How it works](#how-it-works)
+
 ## Problems paddock solves
 
 ### Claude Code in Docker Sandboxes ignores my `CLAUDE.md`, agents and slash commands
