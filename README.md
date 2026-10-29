@@ -278,8 +278,10 @@ rm -rf ~/Library/Caches/paddock ~/.cache/paddock   # kit and sandbox records
 
 ## Status
 
-Early, and tested on macOS with `sbx` v0.49. Linux builds are published but
-not yet tested; reports are welcome. Claude Code is the only agent for now.
+Early. Sandboxes are tested on macOS with `sbx` v0.49. On Linux (Ubuntu 24.04,
+amd64 and arm64) the install script, the test suite and the commands that
+don't need a sandbox are tested; running sandboxes there isn't yet, so reports
+are welcome. Claude Code is the only agent for now.
 
 paddock is an independent project, not affiliated with Docker or Anthropic.
 
