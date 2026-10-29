@@ -1,0 +1,13 @@
+schemaVersion: "2"
+kind: mixin
+name: paddock
+description: Wire read-only host Claude config into the sandbox and allow only chosen host hooks.
+requires:
+  agent: claude
+setup:
+  startup:
+    - command: ["sh", "/home/agent/.local/share/paddock/sync.sh"]
+      user: "1000"
+    # Managed settings outrank project and plugin settings, so only allowed host hooks run.
+    - command: ["sh", "/home/agent/.local/share/paddock/managed.sh"]
+      user: "0"

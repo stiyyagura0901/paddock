@@ -1,0 +1,66 @@
+// Package sbx is a thin wrapper around the Docker Sandboxes CLI.
+package sbx
+
+import (
+	"bufio"
+	"bytes"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"strings"
+)
+
+// Bin is the sbx executable; overridable for tests.
+var Bin = "sbx"
+
+// Run runs sbx attached to the terminal and returns its exit code.
+func Run(args ...string) (int, error) {
+	cmd := exec.Command(Bin, args...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	err := cmd.Run()
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
+		return exit.ExitCode(), nil
+	}
+	if err != nil {
+		return 1, fmt.Errorf("running %s: %w", Bin, err)
+	}
+	return 0, nil
+}
+
+// Names returns the names of all local sandboxes.
+func Names() ([]string, error) {
+	out, err := exec.Command(Bin, "ls", "-q").Output()
+	if err != nil {
+		return nil, fmt.Errorf("%s ls: %w", Bin, err)
+	}
+	var names []string
+	sc := bufio.NewScanner(bytes.NewReader(out))
+	for sc.Scan() {
+		if n := strings.TrimSpace(sc.Text()); n != "" {
+			names = append(names, n)
+		}
+	}
+	return names, sc.Err()
+}
+
+// Exists reports whether a sandbox with the given name exists.
+func Exists(name string) (bool, error) {
+	names, err := Names()
+	if err != nil {
+		return false, err
+	}
+	for _, n := range names {
+		if n == name {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// Installed reports whether the sbx executable is on PATH.
+func Installed() bool {
+	_, err := exec.LookPath(Bin)
+	return err == nil
+}
