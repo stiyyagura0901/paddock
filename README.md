@@ -18,6 +18,8 @@ paddock                # Claude Code in this project's sandbox, with your setup
 Before starting anything, `paddock --dry-run` shows exactly what the sandbox
 will get:
 
+![paddock --dry-run showing the sandbox name, the project folder Claude can edit, the read-only config, which host hooks will run, and the plugins](docs/demo.gif)
+
 ```
 paddock would create a new sandbox for my-project.
 
@@ -100,6 +102,44 @@ paddock -- --continue   # resume the last conversation
 paddock -- --resume     # pick one
 ```
 
+### I want several Claude sessions on one repo at once
+
+Give each extra session a name:
+
+```sh
+paddock --name fix-login        # a second sandbox for this repo
+paddock --name docs             # and a third
+```
+
+A named sandbox doesn't edit your folder. It works on its own clone of the
+repo, starting from the branch you have checked out, so parallel sessions
+never touch the same files. Each named sandbox is a git remote of your repo;
+bring its commits back while the sandbox is running:
+
+```sh
+git fetch sandbox-claude-my-project-3f9a1c-fix-login
+git log main..sandbox-claude-my-project-3f9a1c-fix-login/main   # what it did on main
+```
+
+paddock prints the exact `git fetch` command when the sandbox starts and when
+you exit. Fetched commits stay in your repo after the sandbox is removed;
+commits you haven't fetched, and uncommitted work, are lost with it.
+`--name` needs the top folder of the repo's main checkout, not a subfolder
+or a `git worktree`. `paddock ls` shows each sandbox's name, and `stop`, `rm`
+and `shell` take `--name` too.
+
+### I want Claude to review a PR from someone I don't know
+
+```sh
+paddock review https://github.com/OWNER/REPO/pull/123   # or OWNER/REPO#123, or 123 in a clone
+```
+
+paddock clones the PR into a fresh folder with git hooks switched off, so
+nothing from the PR runs on your machine. Claude reviews it in a throwaway
+sandbox where no hooks run at all, not even the host hooks you allowed, and
+the sandbox and the clone are deleted when you exit. Add `--keep` to keep
+them. It needs the [GitHub CLI](https://cli.github.com) (`gh`), logged in.
+
 ## Install
 
 You need [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) (`sbx`)
@@ -146,13 +186,15 @@ Every warning comes with the command that fixes it.
 | Command | What it does |
 | --- | --- |
 | `paddock [DIR] [-- ARGS]` | Start, or rejoin, the sandbox for DIR (default: current folder). Arguments after `--` go to Claude Code. |
-| `paddock --dry-run [-v] [DIR]` | Show what would be shared and which hooks would run, without starting anything. `-v` lists blocked hooks and the `sbx` command. |
+| `paddock --name NAME [DIR] [-- ARGS]` | Start, or rejoin, another sandbox for DIR that works on its own clone of the git repo, so several sessions can run at once. |
+| `paddock --dry-run [-v] [--name NAME] [DIR]` | Show what would be shared and which hooks would run, without starting anything. `-v` lists blocked hooks and the `sbx` command. |
+| `paddock review [--keep] PR [-- ARGS]` | Have Claude review a GitHub pull request (a URL, `OWNER/REPO#N`, or `N` for this folder's repo) in a throwaway sandbox with no hooks. Arguments after `--` replace the review prompt. Takes `--dry-run`. |
 | `paddock init` | Run the first-run setup, or re-check it. Never overwrites an existing config. |
 | `paddock doctor` | Check `sbx`, config, git identity, SSH agent, Claude login, GitHub token, skills, and out-of-date sandboxes. |
 | `paddock sync` | Copy `~/.claude/skills` into sandboxes after you change them. |
-| `paddock ls` | List your paddock sandboxes by project folder, with status and when each was last used. |
-| `paddock stop`, `shell` `[DIR]` | Stop a project's sandbox (conversations are kept), or open a shell in it. |
-| `paddock rm [-f] [DIR]` | Remove a project's sandbox and its conversations. Asks first unless you pass `-f`. |
+| `paddock ls` | List your paddock sandboxes by project folder and name, with status and when each was last used. |
+| `paddock stop`, `shell` `[--name NAME] [DIR]` | Stop a project's sandbox (conversations are kept), or open a shell in it. |
+| `paddock rm [-f] [--name NAME] [DIR]` | Remove a project's sandbox and its conversations. Asks first unless you pass `-f`. |
 
 paddock refuses to mount `/` or your home folder; run it in a project folder.
 
@@ -179,20 +221,65 @@ hooks:
 plugins:
   # Host plugins to turn off inside the sandbox, as name@marketplace.
   disable: []
+
+# Extra host folders for every sandbox. Add :ro to make one read-only.
+mounts:
+  - "~/code/shared-lib:ro"
+
+# Environment variables: KEY=VALUE, or just KEY to pass this machine's value.
+env:
+  - "NODE_ENV=development"
+  - "NPM_TOKEN"
+
+# MCP servers registered with sbx mcp add.
+mcp:
+  - notion
+
+# Additions for one project folder, on top of everything above. Each key
+# takes link, hooks, plugins, mounts, env and mcp.
+projects:
+  ~/code/my-project:
+    mounts: ["~/data/fixtures:ro"]
+    env: ["DATABASE_URL"]
 ```
 
 Unknown keys are an error, so a typo can't silently change what runs.
+`paddock --dry-run` lists extra mounts, env variable names (never their
+values) and MCP servers.
+
+Per-project settings live in your config, never in the repo, so a cloned repo
+can't give itself hooks, mounts or env.
 
 Settings apply when a sandbox is created. After you change them, `paddock` and
 `paddock doctor` point out sandboxes created with older settings; recreate one
-with `paddock rm` then `paddock`.
+with `paddock rm` then `paddock`. Env entries also apply when you rejoin a
+sandbox.
+
+### Sharing a config with your team
+
+Put the settings everyone needs in one file and point each config at it:
+
+```yaml
+extends: https://raw.githubusercontent.com/my-org/dev-setup/main/paddock.yaml
+```
+
+`extends` takes a local path (relative paths start from your config's folder)
+or an https URL. A URL is cached for an hour; if it can't be fetched later,
+paddock warns and uses the cached copy. The base's entries come first and
+yours are added after them, project by project; for `env`, your value wins
+when both set the same key. A base can't extend another base.
+
+A base fetched from a URL can't set `mounts` or `projects`, because the file
+can change without you noticing and shouldn't be able to share more of your
+machine. Put those in your own config, or use a local file you control.
 
 ## What's shared, and what isn't
 
 | From your machine | In the sandbox |
 | --- | --- |
-| The project folder | Read-write, at the same path |
+| The project folder | Read-write, at the same path (a named sandbox reads it and works on its own clone) |
 | `~/.claude` entries in `link:` and `settings.json` | Read-only |
+| Folders in `mounts:` | Read-write, or read-only with `:ro` |
 | Model, effort, `env`, plugins, marketplaces, `permissions.allow` | Copied into the sandbox's own settings |
 | Hooks matching `hooks.allow` | Installed as managed hooks; all others blocked |
 | Skills | Copied by `sbx skills import` (`paddock sync`) |
@@ -233,8 +320,10 @@ rm -rf ~/Library/Caches/paddock ~/.cache/paddock   # kit and sandbox records
 
 ## Status
 
-Early, and tested on macOS with `sbx` v0.49. Linux builds are published but
-not yet tested; reports are welcome. Claude Code is the only agent for now.
+Early. Sandboxes are tested on macOS with `sbx` v0.49. On Linux (Ubuntu 24.04,
+amd64 and arm64) the install script, the test suite and the commands that
+don't need a sandbox are tested; running sandboxes there isn't yet, so reports
+are welcome. Claude Code is the only agent for now.
 
 paddock is an independent project, not affiliated with Docker or Anthropic.
 

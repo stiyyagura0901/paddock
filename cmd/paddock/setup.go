@@ -147,8 +147,7 @@ func runDoctor(problemsOnly bool) int {
 	hostDir := filepath.Join(home, ".claude")
 	results := doctor.Run(doctor.Env{HostDir: hostDir, ConfigPath: path, Sbx: sbx.Bin})
 	if cfg, err := config.Load(path); err == nil && sbx.Installed() {
-		fp := kit.Fingerprint(kitOptions(hostDir, cfg), hostMounts(hostDir, cfg))
-		if stale := staleProjects(fp); len(stale) > 0 {
+		if stale := staleProjects(cfg); len(stale) > 0 {
 			results = append(results, doctor.Result{Level: doctor.Warn, What: "sandboxes",
 				Detail: "created with older settings: " + strings.Join(stale, ", "),
 				Fix:    "in that project, run paddock rm, then paddock (deletes its conversations)"})
