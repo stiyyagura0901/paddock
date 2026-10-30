@@ -66,9 +66,9 @@ type Project struct {
 }
 
 // Starter returns the config paddock init writes: the default links plus
-// extraLinks, and the given hook prefixes. With neither it parses to
-// Default().
-func Starter(extraLinks, allow []string) string {
+// extraLinks, the given hook prefixes and MCP servers. With none of them
+// it parses to Default().
+func Starter(extraLinks, allow, mcp []string) string {
 	var links strings.Builder
 	for _, l := range append(Default().Link, extraLinks...) {
 		fmt.Fprintf(&links, "  - %s\n", strconv.Quote(l))
@@ -82,8 +82,18 @@ func Starter(extraLinks, allow []string) string {
 		}
 		hooks = b.String()
 	}
+	servers := "# mcp:\n#   - linear\n"
+	if len(mcp) > 0 {
+		var b strings.Builder
+		b.WriteString("mcp:\n")
+		for _, m := range mcp {
+			fmt.Fprintf(&b, "  - %s\n", strconv.Quote(m))
+		}
+		servers = b.String()
+	}
 	return `# paddock config. Changes apply to new sandboxes; remove a sandbox
-# (paddock rm) to recreate it with new settings.
+# (paddock rm) to recreate it with new settings. MCP servers are the
+# exception: they reach existing sandboxes the next time you start them.
 
 # A shared base config (a path or an https URL). Its entries come first.
 # extends: ~/team/paddock.yaml
@@ -109,10 +119,9 @@ plugins:
 #   - "NODE_ENV=development"
 #   - "NPM_TOKEN"
 
-# MCP servers registered with sbx mcp add.
-# mcp:
-#   - notion
-
+# MCP servers sandboxes can use. Bring one over from this machine with:
+# paddock mcp add NAME
+` + servers + `
 # Additions for one project folder, on top of the settings above.
 # projects:
 #   ~/code/my-project:
@@ -441,7 +450,7 @@ func check(links, mounts, env, mcp []string, home string) error {
 
 // WriteStarter writes the starter config to path unless a file is already
 // there. It reports whether it wrote one.
-func WriteStarter(path string, extraLinks, allow []string) (bool, error) {
+func WriteStarter(path string, extraLinks, allow, mcp []string) (bool, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return false, err
 	}
@@ -452,7 +461,7 @@ func WriteStarter(path string, extraLinks, allow []string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if _, err := f.WriteString(Starter(extraLinks, allow)); err != nil {
+	if _, err := f.WriteString(Starter(extraLinks, allow, mcp)); err != nil {
 		f.Close()
 		return false, err
 	}

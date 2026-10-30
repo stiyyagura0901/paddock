@@ -128,6 +128,26 @@ commits you haven't fetched, and uncommitted work, are lost with it.
 or a `git worktree`. `paddock ls` shows each sandbox's name, and `stop`, `rm`
 and `shell` take `--name` too.
 
+### My MCP servers (Linear, CircleCI, ...) aren't in the sandbox
+
+Sandboxes don't see `~/.claude.json`, where Claude Code keeps your MCP
+servers. Bring them over, into sandboxes that are already running too:
+
+```sh
+paddock mcp                    # list your servers and which sandboxes get
+paddock mcp add linear circleci
+```
+
+paddock sets each one up in Docker Sandboxes (`sbx mcp add`), opening a
+browser to sign in where the server needs it, turns it on in your config,
+and adds it to your existing sandboxes. A Claude session already running in
+one sees the new tools without a restart. `--here` turns a server on for
+this folder's sandboxes only. `paddock mcp rm NAME` takes it away again.
+Servers that run a command run it on your machine, not in the sandbox, so
+their tokens stay there. Ones that need environment variables or headers,
+which usually hold tokens, have to be set up by hand with `sbx mcp add`.
+`paddock init` offers your servers when it first writes your config.
+
 ### I want Claude to review a PR from someone I don't know
 
 ```sh
@@ -137,8 +157,9 @@ paddock review https://github.com/OWNER/REPO/pull/123   # or OWNER/REPO#123, or 
 paddock clones the PR into a fresh folder with git hooks switched off, so
 nothing from the PR runs on your machine. Claude reviews it in a throwaway
 sandbox where no hooks run at all, not even the host hooks you allowed, and
-the sandbox and the clone are deleted when you exit. Add `--keep` to keep
-them. It needs the [GitHub CLI](https://cli.github.com) (`gh`), logged in.
+the sandbox and the clone are deleted when you exit. MCP servers are
+left out too, since the PR's text could steer what Claude does with them.
+Add `--keep` to keep them. It needs the [GitHub CLI](https://cli.github.com) (`gh`), logged in.
 
 ## Install
 
@@ -190,8 +211,11 @@ Every warning comes with the command that fixes it.
 | `paddock --dry-run [-v] [--name NAME] [DIR]` | Show what would be shared and which hooks would run, without starting anything. `-v` lists blocked hooks and the `sbx` command. |
 | `paddock review [--keep] PR [-- ARGS]` | Have Claude review a GitHub pull request (a URL, `OWNER/REPO#N`, or `N` for this folder's repo) in a throwaway sandbox with no hooks. Arguments after `--` replace the review prompt. Takes `--dry-run`. |
 | `paddock init` | Run the first-run setup, or re-check it. Never overwrites an existing config. |
-| `paddock doctor` | Check `sbx`, config, git identity, SSH agent, Claude login, GitHub token, skills, and out-of-date sandboxes. |
+| `paddock doctor` | Check `sbx`, config, git identity, SSH agent, Claude login, GitHub token, skills, MCP servers, and out-of-date sandboxes. |
 | `paddock sync` | Copy `~/.claude/skills` into sandboxes after you change them. |
+| `paddock mcp` | List the MCP servers on your machine and which ones sandboxes get. |
+| `paddock mcp add [--here] NAME...` | Let sandboxes, running ones included, use MCP servers from your machine. `--here` limits it to this folder's sandboxes. |
+| `paddock mcp rm NAME...` | Take MCP servers away from sandboxes. |
 | `paddock ls` | List your paddock sandboxes by project folder and name, with status and when each was last used. |
 | `paddock stop`, `shell` `[--name NAME] [DIR]` | Stop a project's sandbox (conversations are kept), or open a shell in it. |
 | `paddock rm [-f] [--name NAME] [DIR]` | Remove a project's sandbox and its conversations. Asks first unless you pass `-f`. |
@@ -231,7 +255,7 @@ env:
   - "NODE_ENV=development"
   - "NPM_TOKEN"
 
-# MCP servers registered with sbx mcp add.
+# MCP servers sandboxes can use. paddock mcp add NAME adds one here.
 mcp:
   - notion
 
@@ -283,6 +307,7 @@ machine. Put those in your own config, or use a local file you control.
 | Model, effort, `env`, plugins, marketplaces, `permissions.allow` | Copied into the sandbox's own settings |
 | Hooks matching `hooks.allow` | Installed as managed hooks; all others blocked |
 | Skills | Copied by `sbx skills import` (`paddock sync`) |
+| MCP servers in `mcp:` | Through the sandbox's MCP gateway; local ones run on your machine |
 | git name and email; SSH agent | Copied; forwarded |
 
 Your host `~/.claude` is never written to. Things to know:
@@ -307,7 +332,9 @@ sandbox starts, the kit:
    settings, which is what blocks every other hook.
 
 paddock records a fingerprint of those settings per sandbox so it can tell you
-later when one is out of date. Reattaching just runs `sbx run --name`.
+later when one is out of date. Reattaching runs `sbx run --name`, after
+adding or removing MCP servers (`sbx mcp load` and `unload`) to match your
+config.
 
 ## Uninstall
 

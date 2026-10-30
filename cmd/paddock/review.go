@@ -215,6 +215,7 @@ func runReview(args []string) int {
 	}
 	p.cfg, p.base = cfg.For(p.dir, home), cfg.Extends
 	p.cfg.Hooks.Allow = nil // no host hooks in a review; project hooks never run
+	p.cfg.MCP = nil         // nor MCP servers: the PR's text could steer what Claude does with them
 	p.name = sandbox.Name(p.dir)
 	p.rm = !keep
 	p.command = "paddock review"

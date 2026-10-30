@@ -92,6 +92,25 @@ func Exists(name string) (bool, error) {
 	return false, nil
 }
 
+// MCPServers returns the names of the MCP servers registered with sbx.
+func MCPServers() (map[string]bool, error) {
+	out, err := exec.Command(Bin, "mcp", "ls", "--json").Output()
+	if err != nil {
+		return nil, fmt.Errorf("%s mcp ls: %w", Bin, err)
+	}
+	var list []struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(out, &list); err != nil {
+		return nil, fmt.Errorf("%s mcp ls: unexpected output: %w", Bin, err)
+	}
+	names := map[string]bool{}
+	for _, s := range list {
+		names[s.Name] = true
+	}
+	return names, nil
+}
+
 // Installed reports whether the sbx executable is on PATH.
 func Installed() bool {
 	_, err := exec.LookPath(Bin)

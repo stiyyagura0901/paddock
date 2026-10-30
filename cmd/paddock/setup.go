@@ -43,7 +43,7 @@ func setup(firstRun bool) int {
 		if err != nil {
 			return fail(err)
 		}
-		if _, err := config.WriteStarter(path, extra, allow); err != nil {
+		if _, err := config.WriteStarter(path, extra, allow, offerMCP()); err != nil {
 			return fail(err)
 		}
 		fmt.Println("Saved your config to", tilde(path), "(edit it any time).")
@@ -147,6 +147,9 @@ func runDoctor(problemsOnly bool) int {
 	hostDir := filepath.Join(home, ".claude")
 	results := doctor.Run(doctor.Env{HostDir: hostDir, ConfigPath: path, Sbx: sbx.Bin})
 	if cfg, err := config.Load(path); err == nil && sbx.Installed() {
+		if r, ok := mcpResult(cfg); ok {
+			results = append(results, r)
+		}
 		if stale := staleProjects(cfg); len(stale) > 0 {
 			results = append(results, doctor.Result{Level: doctor.Warn, What: "sandboxes",
 				Detail: "created with older settings: " + strings.Join(stale, ", "),
