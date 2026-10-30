@@ -181,6 +181,7 @@ func runManage(cmd string, args []string) int {
 			return fail(fmt.Errorf("couldn't remove the %s:\n%s", what, out))
 		}
 		os.Remove(recordPath(s.Name))
+		os.Remove(recordPath(s.Name) + ".mcp")
 		fmt.Printf("Removed the %s.\n", what)
 		return 0
 
@@ -229,6 +230,23 @@ func recordFingerprint(name, fp string) error {
 		return err
 	}
 	return os.WriteFile(path, []byte(fp+"\n"), 0o644)
+}
+
+// attachedMCP returns the MCP servers paddock has attached to the sandbox.
+func attachedMCP(name string) []string {
+	b, err := os.ReadFile(recordPath(name) + ".mcp")
+	if err != nil {
+		return nil
+	}
+	return strings.Fields(string(b))
+}
+
+func recordMCP(name string, servers []string) error {
+	path := recordPath(name) + ".mcp"
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(strings.Join(servers, "\n")+"\n"), 0o644)
 }
 
 // currentFingerprint is what a sandbox created now for project folder dir

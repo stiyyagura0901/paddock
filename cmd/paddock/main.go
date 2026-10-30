@@ -32,6 +32,12 @@ Usage:
   paddock init          set up, or check, paddock (runs on first use too)
   paddock doctor        check your setup and print fixes
   paddock sync          copy your skills into sandboxes
+  paddock mcp           list the MCP servers sandboxes can use
+  paddock mcp add [--here] NAME...
+                        let sandboxes use MCP servers from this machine, running
+                        ones included (--here: only this folder's sandboxes)
+  paddock mcp rm NAME...
+                        take MCP servers away from sandboxes
   paddock ls            list your paddock sandboxes
   paddock stop [--name NAME] [DIR]
                         stop DIR's sandbox; its conversations are kept
@@ -76,6 +82,8 @@ func run(args []string) int {
 		return withSbx(runList)
 	case "review":
 		return runReview(args[1:])
+	case "mcp":
+		return withSbx(func() int { return runMCP(args[1:]) })
 	case "stop", "rm", "shell":
 		return withSbx(func() int { return runManage(cmd, args[1:]) })
 	}

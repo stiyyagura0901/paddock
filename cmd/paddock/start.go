@@ -44,7 +44,8 @@ func (p plan) sbxArgs() []string {
 			a = append(a, "--clone")
 		}
 	}
-	// sbx applies -e on re-attach too; mounts and MCP only on create.
+	// sbx applies -e on re-attach too; mounts and --static-mcp only on
+	// create. paddock attaches MCP servers to an existing sandbox itself.
 	for _, e := range p.cfg.Env {
 		a = append(a, "-e", e)
 	}
@@ -153,11 +154,25 @@ loop:
 		fmt.Fprintln(os.Stderr, "paddock: this sandbox was created with older settings. To apply your current ones,")
 		fmt.Fprintf(os.Stderr, "  run paddock rm%[1]s, then paddock%[1]s (this deletes its conversations).\n", nameFlag(p.named))
 	}
-	if !p.exists {
+	if p.exists {
+		loaded, _, problems := syncMCP(p.name, p.cfg.MCP)
+		for _, pr := range problems {
+			fmt.Fprintln(os.Stderr, "paddock:", pr)
+		}
+		if len(loaded) > 0 {
+			fmt.Printf("Added MCP servers: %s.\n", strings.Join(loaded, ", "))
+		}
+	} else {
 		if err := writeKit(p.kitDir, opts); err != nil {
 			return fail(err)
 		}
 		if err := recordFingerprint(p.name, fp); err != nil {
+			return fail(err)
+		}
+		if p.cfg.MCP, err = registeredMCP(p.cfg.MCP); err != nil {
+			return fail(err)
+		}
+		if err := recordMCP(p.name, p.cfg.MCP); err != nil {
 			return fail(err)
 		}
 		if p.named != "" {
@@ -172,6 +187,27 @@ loop:
 		fetchHint(p)
 	}
 	return exit(code, err)
+}
+
+// registeredMCP returns the servers sbx knows, from names, warning about
+// the rest, which would stop sbx from creating the sandbox.
+func registeredMCP(names []string) ([]string, error) {
+	if len(names) == 0 {
+		return nil, nil
+	}
+	registered, err := sbx.MCPServers()
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, n := range names {
+		if registered[n] {
+			out = append(out, n)
+		} else {
+			fmt.Fprintf(os.Stderr, "paddock: MCP server %s isn't set up, so this sandbox won't have it. Set it up with: paddock mcp add %s\n", n, n)
+		}
+	}
+	return out, nil
 }
 
 // nameArg reads --name NAME, -n NAME or --name=NAME at the start of args.
@@ -300,14 +336,12 @@ func extraMounts(cfg config.Config, home string) []string {
 }
 
 // fingerprint is what a sandbox created now with cfg (already narrowed to
-// its project with For) records. It covers everything fixed at creation.
+// its project with For) records. It covers everything fixed at creation,
+// so not MCP servers, which paddock attaches to existing sandboxes.
 func fingerprint(hostDir, home string, cfg config.Config) string {
 	mounts := append(hostMounts(hostDir, cfg), extraMounts(cfg, home)...)
 	for _, e := range cfg.Env {
 		mounts = append(mounts, "env:"+e)
-	}
-	for _, m := range cfg.MCP {
-		mounts = append(mounts, "mcp:"+m)
 	}
 	return kit.Fingerprint(kitOptions(hostDir, cfg), mounts)
 }
