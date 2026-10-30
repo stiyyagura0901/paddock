@@ -49,7 +49,7 @@ func List() ([]Sandbox, error) {
 	if len(bytes.TrimSpace(out)) == 0 {
 		return nil, nil
 	}
-	if err := json.Unmarshal(out, &list); err != nil {
+	if err := decodeJSON(out, &list); err != nil {
 		return nil, fmt.Errorf("%s ls: unexpected output: %w", Bin, err)
 	}
 	return list, nil
@@ -101,7 +101,7 @@ func MCPServers() (map[string]bool, error) {
 	var list []struct {
 		Name string `json:"name"`
 	}
-	if err := json.Unmarshal(out, &list); err != nil {
+	if err := decodeJSON(out, &list); err != nil {
 		return nil, fmt.Errorf("%s mcp ls: unexpected output: %w", Bin, err)
 	}
 	names := map[string]bool{}
@@ -109,6 +109,12 @@ func MCPServers() (map[string]bool, error) {
 		names[s.Name] = true
 	}
 	return names, nil
+}
+
+// decodeJSON reads the JSON value at the start of out into v, ignoring
+// anything sbx prints after it, such as a notice that an update is out.
+func decodeJSON(out []byte, v any) error {
+	return json.NewDecoder(bytes.NewReader(out)).Decode(v)
 }
 
 // Installed reports whether the sbx executable is on PATH.
